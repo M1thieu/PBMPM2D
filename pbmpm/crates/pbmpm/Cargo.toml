@@ -1,0 +1,8 @@
+[package]
+name = "pbmpm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.11"
+glam = "0.23"

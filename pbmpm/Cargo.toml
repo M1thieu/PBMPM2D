@@ -1,0 +1,9 @@
+[package]
+name = "pbmpm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.15"          # For rendering
+glam = "0.29"      # For vector/matrix math
+
