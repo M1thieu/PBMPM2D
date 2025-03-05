@@ -27,14 +27,6 @@ struct WindowSize {
     height: f32,
 }
 
-//TODO for scaling purposes
-#[derive(Resource)]
-struct _SpatialGrid {
-    cells: HashMap<IVec2, Vec<Entity>>,
-    cell_size: f32,
-}
-
-
 #[derive(Component)]
 struct Particle {
     velocity: Vec2,
@@ -43,7 +35,15 @@ struct Particle {
 #[derive(Resource)]
 struct Grid {
     cell_size: f32,
-    cells: HashMap<(i32, i32), Vec<Entity>>,
+    cells: HashMap<(i32, i32), GridCell>,
+    previous_velocities: HashMap<(i32, i32), Vec2>,
+}
+
+
+#[derive(Default, Clone, Copy)]
+struct GridCell {
+    velocity: Vec2,
+    mass: f32,
 }
 
 impl Grid {
@@ -51,16 +51,16 @@ impl Grid {
         Self {
             cell_size,
             cells: HashMap::new(),
+            previous_velocities: HashMap::new(),
         }
     }
 
     fn clear(&mut self) {
-        self.cells.clear();
-    }
-
-    fn insert(&mut self, position: Vec2, entity: Entity) {
-        let cell_coord = self.world_to_cell(position);
-        self.cells.entry(cell_coord).or_insert(Vec::new()).push(entity);
+        self.previous_velocities.clear(); // Reset previous velocities
+        for (cell_idx, cell) in &self.cells {
+            self.previous_velocities.insert(*cell_idx, cell.velocity); // Store last frame's velocity
+        }
+        self.cells.clear(); // Reset grid
     }
 
     fn world_to_cell(&self, position: Vec2) -> (i32, i32) {
@@ -70,6 +70,7 @@ impl Grid {
         )
     }
 }
+
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
@@ -151,14 +152,51 @@ fn update_particles(
 
 fn update_grid(
     mut grid: ResMut<Grid>,
-    query: Query<(Entity, &Transform), With<Particle>>,
+    gravity: Res<Gravity>,
+    query: Query<(&Transform, &Particle)>,
 ) {
-    grid.clear();
+    // First, store previous velocities before clearing
+    let mut previous_velocities = HashMap::new();
+    for (cell_idx, cell) in &grid.cells {
+        previous_velocities.insert(*cell_idx, cell.velocity);
+    }
 
-    for (entity, transform) in &query {
-        grid.insert(transform.translation.xy(), entity);
+    grid.clear(); // Now safe to clear grid
+
+    for (transform, particle) in &query {
+        let world_pos = transform.translation.xy();
+        let cell_idx = grid.world_to_cell(world_pos);
+        let cell_offset = world_pos / grid.cell_size - Vec2::new(cell_idx.0 as f32, cell_idx.1 as f32);
+
+        let weights = [
+            0.5 * (0.5 - cell_offset) * (0.5 - cell_offset),
+            0.75 - cell_offset * cell_offset,
+            0.5 * (0.5 + cell_offset) * (0.5 + cell_offset),
+        ];
+
+        for gx in 0..3 {
+            for gy in 0..3 {
+                let weight = weights[gx].x * weights[gy].y;
+                let neighbor_cell = (cell_idx.0 + gx as i32 - 1, cell_idx.1 + gy as i32 - 1);
+                let cell = grid.cells.entry(neighbor_cell).or_insert(GridCell::default());
+
+                cell.mass += weight;
+                cell.velocity += weight * particle.velocity;
+            }
+        }
+    }
+
+    // Now apply gravity using stored previous velocities
+    for (cell_idx, cell) in grid.cells.iter_mut() {
+        if cell.mass > 0.0 {
+            let prev_velocity = previous_velocities.get(cell_idx).copied().unwrap_or(Vec2::ZERO);
+            cell.velocity = (cell.velocity + prev_velocity) * 0.5; // Simple velocity smoothing
+            cell.velocity += gravity.0; // Apply gravity
+        }
     }
 }
+
+
 
 // Particle Collision Handling
 fn resolve_collisions(
