@@ -155,13 +155,12 @@ fn update_grid(
     gravity: Res<Gravity>,
     query: Query<(&Transform, &Particle)>,
 ) {
-    // First, store previous velocities before clearing
     let mut previous_velocities = HashMap::new();
     for (cell_idx, cell) in &grid.cells {
         previous_velocities.insert(*cell_idx, cell.velocity);
     }
 
-    grid.clear(); // Now safe to clear grid
+    grid.clear();
 
     for (transform, particle) in &query {
         let world_pos = transform.translation.xy();
@@ -180,13 +179,13 @@ fn update_grid(
                 let neighbor_cell = (cell_idx.0 + gx as i32 - 1, cell_idx.1 + gy as i32 - 1);
                 let cell = grid.cells.entry(neighbor_cell).or_insert(GridCell::default());
 
-                cell.mass += weight;
+                // Use mass-weighted velocity updates (momentum conservation)
+                cell.mass += weight * particle.velocity.length();
                 cell.velocity += weight * particle.velocity;
             }
         }
     }
-
-    // Now apply gravity using stored previous velocities
+    
     for (cell_idx, cell) in grid.cells.iter_mut() {
         if cell.mass > 0.0 {
             let prev_velocity = previous_velocities.get(cell_idx).copied().unwrap_or(Vec2::ZERO);
@@ -195,6 +194,7 @@ fn update_grid(
         }
     }
 }
+
 
 
 
